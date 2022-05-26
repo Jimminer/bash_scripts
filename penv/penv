@@ -1,0 +1,132 @@
+#!/bin/bash
+
+#####################################################
+#													#
+# CHANGE THIS TO THE PATH THAT YOU SAVED THE SCRIPT #
+#													#
+#													#
+# scriptdir=/path/to/folder
+#													#
+#													#
+# CHANGE THIS TO THE PATH THAT YOU SAVED THE SCRIPT #
+#													#
+#####################################################
+
+# ----------- FUNCTIONS -----------
+
+_refreshArr(){
+	if [[ -z $scriptdir ]]; then
+		scriptdir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)
+	fi
+	if ([[ -f $scriptdir/penv ]] && [[ "$1" -eq 0 ]]); then
+		if [[ -f "${scriptdir}/.penvdata" ]]; then
+			envs=($(cat ${scriptdir}/.penvdata | head -1))
+			envpaths=($(cat ${scriptdir}/.penvdata | tail -1))
+		else
+			echo -e "\n" > "${scriptdir}/.penvdata"
+		fi
+	elif [[ -f $scriptdir/penv ]]; then
+		echo -e "${envs[@]}\n${envpaths[@]}" > "${scriptdir}/.penvdata"
+	fi
+}
+
+_penv(){
+	if [[ "$sourced" -eq 1 ]]; then
+		for (( i=1; i<$((${#envs[@]}+1)); i++ )); do
+			if [[ "${envs[$i]}" =~ "$1" ]]; then
+				envpath="${envpaths[$i]}"
+				break
+			fi
+		done
+		if ([[ -n "$envpath" ]] && [[ $(find "${envpath}/${1}/bin" -maxdepth 1 -type f -name "activate" 2>/dev/null | wc -l 2>/dev/null) -gt 0 ]]); then
+			echo "Activating $1"
+	    	source "${envpath}/${1}/bin/activate"
+		else
+	    	echo -e "${CL_RED}Error!${CL_CLEAR} $1 is not a valid env!"
+	    fi
+	else
+		echo -e "${CL_RED}Error!${CL_CLEAR} To activate an env, you must source this script!"
+	fi
+}
+
+_help(){
+	echo -e "This is a utility to quickly and easily activate Python virtual enviroments.\n\nList of all commands:\n\n[env-name] (activates that env | the env must be added with 'penv add' first)\nhelp (shows this prompt)\nlist (lists all saved envs)\nadd (adds an env)\n\n**To source the file from a different directory than the script's, uncomment and edit the 8th line of the script**"
+}
+
+_list(){
+	echo -e "Saved envs:"
+	for (( i=0; i<"${#envs[@]}"; i++ )); do
+		echo -e "${CL_GREEN}${envs[$i]}${CL_CLEAR} (${envpaths[$i]})"
+	done
+}
+
+_add(){
+	if [[ -z "$1" ]]; then
+		echo -e "${CL_RED}Error!${CL_CLEAR} Invalid arguments! See penv help for info."
+	elif [[ "${envs[*]}" =~ "$(basename $1)" ]]; then
+		echo -e "${CL_RED}Error!${CL_CLEAR} $1 is already added into penv!"
+	else
+		if [[ $(find "${1}/bin" -maxdepth 1 -type f -name "activate" 2>/dev/null | wc -l 2>/dev/null) -gt 0 ]]; then
+			envs=("${envs[@]}" "$(basename $1)")
+			envpaths=("${envpaths[@]}" "$(realpath ${1}/..)")
+			_refreshArr 1
+			echo "Added env $(basename $1)"
+		else
+			echo -e "${CL_RED}Error!${CL_CLEAR} $1 is not a valid env!"
+		fi
+	fi
+}
+
+# --------- INITIALIZATION --------
+
+# Color codes
+CL_RED="\033[0;31m"
+CL_GREEN="\033[0;32m"
+CL_CLEAR="\033[0m"
+
+# Get env arrays (from file .penvdata)
+_refreshArr 0
+
+# Commands array
+cmds=(help list add)
+
+# Determine if the script is being sourced. (https://stackoverflow.com/a/28776166)
+(return 0 2>/dev/null) && sourced=1 || sourced=0
+
+# Implement auto completion using the arrays 'envs', 'cmds'
+if [[ -n "$COMP_LINE" ]]; then
+	for e in "${envs[@]}"; do
+		[[ ${e:0:${#1}} == "$1" ]] && echo "$e"
+	done
+
+	for c in "${cmds[@]}"; do
+		[[ ${c:0:${#1}} == "$1" ]] && echo "$c"
+	done
+	
+	exit
+fi
+
+# ------- COMMAND CHECKING --------
+
+found=0
+
+for i in "${envs[@]}"; do
+	if [[ "$i" =~ "$1" ]]; then
+		found=1
+		break
+	fi
+done
+
+if [[ ! -f $scriptdir/penv ]]; then # Check if the script is sourced from elsewhere
+	echo -e "${CL_RED}Error!${CL_CLEAR} Please run the script inside it's directory or see at the bottom of penv help!"
+elif [ $# -eq 0 ]; then
+    _help
+else
+	if [[ "${cmds[*]}" =~ "$1" ]]; then
+		_"$1" "$2"
+	elif [[ "$found" -eq 1 ]]; then
+		_penv "$1"
+	else
+		echo -e "${CL_RED}Error!${CL_CLEAR} This command does not exist!"
+	fi
+fi
